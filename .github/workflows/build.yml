@@ -1,0 +1,83 @@
+name: Build Rig 74
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ 'v*' ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, name: Windows }
+          - { os: macos-14,       name: macOS }
+          - { os: ubuntu-22.04,   name: Linux }
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build libasound2-dev libjack-jackd2-dev libx11-dev libxcomposite-dev \
+            libxcursor-dev libxext-dev libxinerama-dev libxrandr-dev libxrender-dev libfreetype6-dev \
+            libfontconfig1-dev libgl1-mesa-dev
+
+      - name: Configure
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          else
+            cmake -B build -DCMAKE_BUILD_TYPE=Release
+          fi
+
+      - name: Build VST3 + Standalone
+        run: cmake --build build --config Release --target Rig74_VST3 Rig74_Standalone --parallel 4
+
+      - name: Build AU (macOS)
+        if: runner.os == 'macOS'
+        run: cmake --build build --config Release --target Rig74_AU --parallel 4
+
+      - name: Package
+        shell: bash
+        run: |
+          ART="build/Rig74_artefacts/Release"
+          mkdir -p "dist/Rig 74"
+          cp -R "$ART/VST3/Rig 74.vst3" "dist/Rig 74/"
+          case "$RUNNER_OS" in
+            Windows) cp "$ART/Standalone/Rig 74.exe" "dist/Rig 74/" ;;
+            macOS)   cp -R "$ART/Standalone/Rig 74.app" "dist/Rig 74/"; cp -R "$ART/AU/Rig 74.component" "dist/Rig 74/" ;;
+            Linux)   cp "$ART/Standalone/Rig 74" "dist/Rig 74/" ;;
+          esac
+          cp README.md "dist/Rig 74/"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Rig74-${{ matrix.name }}
+          path: dist
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Zip
+        run: |
+          cd artifacts
+          for d in */; do (cd "$d" && zip -qr "../${d%/}.zip" .); done
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
