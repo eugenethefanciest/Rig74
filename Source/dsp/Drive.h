@@ -15,35 +15,44 @@ public:
         for (auto* f : { &pre1, &pre2, &toneLp, &toneLp2, &dcBlock, &bodyLp })
             f->prepare (sr);
         dcBlock.setCutoff (15.0f);
+        shaper.reset();
         type = -1;
     }
 
     void setParams (int newType, float gain, float tone, float level)
     {
-        if (newType != type) { type = newType; pre1.reset(); pre2.reset(); toneLp.reset(); toneLp2.reset(); bodyLp.reset(); }
+        if (newType != type)
+        {
+            type = newType;
+            pre1.reset(); pre2.reset(); toneLp.reset(); toneLp2.reset(); bodyLp.reset();
+            shaper.setBias (type == 0 ? 0.08 : (type == 1 ? 0.05 : 0.35));   // fuzz: strongly asymmetric
+            shaper.reset();
+        }
 
         switch (type)
         {
             case 0: // overdrive
                 drive = 1.0f + 140.0f * gain * gain;
                 pre1.setCutoff (720.0f);                       // clipping path high-pass → "mid hump"
+                pre2.setCutoff (6500.0f);                      // feedback-cap roll-off before clipping
                 bodyLp.setCutoff (4000.0f);
                 toneLp.setCutoff (600.0f * std::pow (12.0f, tone));
-                outGain = 1.3f;
+                outGain = 0.85f;
                 break;
             case 1: // distortion
-                drive = 1.0f + 1600.0f * gain * gain;
+                drive = 1.0f + 450.0f * gain * gain;
                 pre1.setCutoff (90.0f);
                 pre2.setCutoff (5500.0f);
                 toneLp.setCutoff (450.0f * std::pow (30.0f, tone));
                 toneLp2.setCutoff (450.0f * std::pow (30.0f, tone));
-                outGain = 0.55f;
+                outGain = 0.35f;
                 break;
             default: // fuzz
-                drive = 2.0f + 500.0f * gain * gain;
+                drive = 2.0f + 300.0f * gain * gain;
                 pre1.setCutoff (60.0f);
+                pre2.setCutoff (5000.0f);
                 toneLp.setCutoff (700.0f * std::pow (12.0f, tone));
-                outGain = 0.3f;
+                outGain = 0.13f;
                 break;
         }
         level = std::max (0.0f, level);
@@ -57,8 +66,8 @@ public:
         {
             case 0:
             {
-                const float clipPath = pre1.hp (x) * drive;
-                const float clipped = std::tanh (clipPath + 0.08f) - 0.0798f;     // slight asymmetry
+                const float clipPath = pre2.lp (pre1.hp (x)) * drive;
+                const float clipped = shaper.process (clipPath);                 // slight asymmetry
                 y = bodyLp.lp (x + 0.55f * clipped);
                 y = toneLp.lp (y);
                 break;
@@ -66,17 +75,15 @@ public:
             case 1:
             {
                 float v = pre2.lp (pre1.hp (x)) * drive;
-                v = v / std::pow (1.0f + std::pow (std::abs (v), 2.5f), 0.4f);      // hard-ish diode knee
-                v = juce::jlimit (-1.0f, 1.0f, v);
+                v = shaper.process (v);                                          // firm diode knee
                 y = toneLp2.lp (toneLp.lp (v));
                 break;
             }
             default:
             {
-                const float v = pre1.hp (x) * drive;
-                // asymmetric transistor clipping with a bias shift
-                const float pos = std::tanh (v * 0.9f + 0.25f) - 0.2449f;
-                const float clipped = pos > 0.0f ? pos : std::max (-0.62f, pos * 1.25f);
+                const float v = pre2.lp (pre1.hp (x)) * drive;
+                // biased transistor clipping: flattens one half-wave much earlier
+                const float clipped = shaper.process (v * 0.9f);
                 y = toneLp.lp (clipped);
                 break;
             }
@@ -89,5 +96,6 @@ private:
     int type = 0;
     float drive = 1.0f, outGain = 1.0f, outLevel = 0.5f;
     OnePole pre1, pre2, toneLp, toneLp2, dcBlock, bodyLp;
+    AdaaTanh shaper;
 };
 } // namespace rig

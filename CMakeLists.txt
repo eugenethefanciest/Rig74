@@ -104,6 +104,12 @@ if(RIG74_BUILD_TESTS)
         Rig74Data juce::juce_audio_utils juce::juce_dsp
         juce::juce_recommended_config_flags)
 
+    juce_add_console_app(Rig74GainTest PRODUCT_NAME "Rig74GainTest")
+    target_sources(Rig74GainTest PRIVATE tools/GainTest.cpp ${RIG74_SOURCES})
+    target_include_directories(Rig74GainTest PRIVATE Source)
+    target_compile_definitions(Rig74GainTest PRIVATE ${RIG74_DEFINES} RIG74_TEST_BUILD=1)
+    target_link_libraries(Rig74GainTest PRIVATE Rig74Data juce::juce_audio_utils juce::juce_dsp juce::juce_recommended_config_flags)
+
     juce_add_console_app(Rig74HostTest PRODUCT_NAME "Rig74HostTest")
     target_sources(Rig74HostTest PRIVATE tools/HostTest.cpp)
     target_compile_definitions(Rig74HostTest PRIVATE ${RIG74_DEFINES} JUCE_PLUGINHOST_VST3=1)

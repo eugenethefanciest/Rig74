@@ -91,7 +91,8 @@ public:
     {
         sr = sampleRate;
         inHp.prepare (sr);
-        for (auto& s : stages) { s.dc.prepare (sr); s.lp.prepare (sr); s.dc.setCutoff (25.0f); }
+        for (auto& s : stages) { s.dc.prepare (sr); s.lp.prepare (sr); s.dc.setCutoff (25.0f); s.tube.reset(); }
+        power.setBias (0.0); power.reset();
         tone.prepare (sr);
         bright.reset(); presence.reset(); depth.reset();
         sagEnv.set (5.0f, 180.0f, sr); sagEnv.reset();
@@ -108,21 +109,21 @@ public:
 
         struct Model { int stages; float maxGain; float inHpHz; float stageLpHz; float bias; bool british; float level; float brightDb; };
         static const Model models[] = {
-            { 1,   9.0f,  35.0f, 9000.0f, 0.10f, false, 1.05f, 4.0f },   // CLEAN '65
-            { 2,  36.0f,  70.0f, 7500.0f, 0.18f, true,  0.80f, 3.0f },   // CRUNCH '68
-            { 3,  70.0f, 110.0f, 6500.0f, 0.22f, true,  0.60f, 2.0f },   // LEAD '72
-            { 4, 120.0f, 160.0f, 6000.0f, 0.26f, true,  0.52f, 1.0f } }; // HOT ROD '79
+            { 1,   9.0f,  35.0f, 9000.0f, 0.10f, false, 1.30f, 4.0f },   // CLEAN '65
+            { 2,  36.0f,  70.0f, 7500.0f, 0.18f, true,  0.62f, 3.0f },   // CRUNCH '68
+            { 3,  60.0f, 110.0f, 6500.0f, 0.22f, true,  0.55f, 2.0f },   // LEAD '72
+            { 4,  80.0f, 160.0f, 6000.0f, 0.26f, true,  0.55f, 1.0f } }; // HOT ROD '79
         const auto& m = models[juce::jlimit (0, 3, model)];
 
         numStages = m.stages;
-        bias = m.bias;
+        if (modelChanged) for (auto& st : stages) { st.tube.setBias (m.bias); st.tube.reset(); }
         preGain = 1.0f + m.maxGain * g * g;
         inHp.setCutoff (m.inHpHz);
         for (int i = 0; i < 4; ++i)
         {
             stages[i].lp.setCutoff (m.stageLpHz + 1500.0f * (float) (3 - i));
             stages[i].dc.setCutoff (i == 0 ? 20.0f : m.inHpHz * 0.6f);
-            stages[i].gain = i == 0 ? 1.0f : 2.2f + 1.5f * g;
+            stages[i].gain = i == 0 ? 1.0f : 2.0f + 1.2f * g;
         }
         if (modelChanged) for (auto& s : stages) { s.dc.reset(); s.lp.reset(); }
 
@@ -146,9 +147,8 @@ public:
         for (int i = 0; i < numStages; ++i)
         {
             auto& s = stages[i];
-            v *= s.gain;
-            v = triode (v);
-            v = s.lp.lp (s.dc.hp (v));
+            v = s.lp.lp (v) * s.gain;        // Miller-cap roll-off before the grid → less fizz
+            v = s.dc.hp (s.tube.process (v)); // asymmetric (biased) tube curve, anti-aliased
         }
 
         v = tone.process (v) * 3.2f;   // compensate the passive stack's insertion loss
@@ -156,27 +156,19 @@ public:
         // power amp with supply sag
         const float sag = sagEnv.process (v);
         const float drive = powerDrive / (1.0f + 0.35f * sag);
-        v = std::tanh (v * drive);
+        v = power.process (v * drive);
         v = depth.process (presence.process (v));
 
         return outDc.hp (v) * outLevel;
     }
 
 private:
-    inline float triode (float x) const noexcept
-    {
-        // asymmetric soft clip: grid conduction rounds off positive peaks earlier
-        // (slopes match at zero, so there is no kink in the transfer curve)
-        const float tb = std::tanh (bias);
-        return x > 0.0f ? std::tanh (x + bias) - tb
-                        : x / (1.0f - x * 0.85f) * (1.0f - tb * tb);
-    }
-
-    struct Stage { OnePole dc, lp; float gain = 1.0f; };
+    struct Stage { OnePole dc, lp; AdaaTanh tube; float gain = 1.0f; };
 
     double sr = 44100.0;
     int model = -1, numStages = 2;
-    float preGain = 1.0f, bias = 0.2f, powerDrive = 1.0f, outLevel = 1.0f;
+    float preGain = 1.0f, powerDrive = 1.0f, outLevel = 1.0f;
+    AdaaTanh power;
     OnePole inHp, outDc;
     Stage stages[4];
     ToneStack tone;

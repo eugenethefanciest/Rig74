@@ -75,9 +75,9 @@ void Rig74Processor::prepareToPlay (double sampleRate, int samplesPerBlock)
     stereo.setSize (2, n);
     dryStereo.setSize (2, n);
 
-    oversampler = std::make_unique<juce::dsp::Oversampling<float>> (1, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
+    oversampler = std::make_unique<juce::dsp::Oversampling<float>> (1, 3, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true);
     oversampler->initProcessing ((size_t) n);
-    const double osRate = sampleRate * 4.0;
+    const double osRate = sampleRate * 8.0;   // 8x: keeps distortion harmonics from folding back (aliasing)
     setLatencySamples (juce::roundToInt (oversampler->getLatencyInSamples()));
 
     hum.prepare (sampleRate);
@@ -95,6 +95,7 @@ void Rig74Processor::prepareToPlay (double sampleRate, int samplesPerBlock)
     tremolo.prepare (sampleRate);
     echo.prepare (sampleRate);
     reverb.prepare (sampleRate, n);
+    limiter.prepare (sampleRate);
 
     swGate.prepare (sampleRate, on (p->gateOn));   swComp.prepare (sampleRate, on (p->compOn));
     swWah.prepare (sampleRate, on (p->wahOn));     swOct.prepare (sampleRate, on (p->octOn));
@@ -176,6 +177,7 @@ void Rig74Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
     const bool tunerOn = on (p->tuner);
 
     float inPk = 0.0f, outPk = 0.0f;
+    double inSq = 0.0, outSq = 0.0;
 
     // ---- process in chunks no larger than the prepared block size ----
     for (int start = 0; start < numSamples; start += currentBlockSize)
@@ -196,6 +198,7 @@ void Rig74Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
             else if (numIn == 1) x = buffer.getSample (0, start + i);
             x *= inGain.getNextValue();
             inPk = std::max (inPk, std::abs (x));
+            inSq += (double) x * x;
             m[i] = x;
         }
 
@@ -226,7 +229,7 @@ void Rig74Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
         }
         gateLevel.store (gate.getCurrentGain());
 
-        // ---- 4x oversampled: drive + amp ----
+        // ---- 8x oversampled: drive + amp ----
         {
             float* chans[] = { m };
             juce::dsp::AudioBlock<float> block (chans, 1, (size_t) len);
@@ -292,19 +295,14 @@ void Rig74Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
             }
         }
 
-        // ---- output gain + safety soft clipper ----
-        auto safety = [] (float x) noexcept
-        {
-            const float a = std::abs (x);
-            if (a < 0.9f) return x;
-            return std::copysign (0.9f + 0.1f * std::tanh ((a - 0.9f) * 10.0f), x);
-        };
-
+        // ---- output gain + peak limiter ----
         for (int i = 0; i < len; ++i)
         {
-            const float g = outGain.getNextValue() * 0.56f;   // internal headroom trim
-            const float l = safety (L[i] * g), r = safety (R[i] * g);
+            const float g = outGain.getNextValue() * 0.40f;   // internal headroom trim (≈ -18 dBFS RMS for a typical rig)
+            float l = L[i] * g, r = R[i] * g;
+            limiter.process (l, r);
             outPk = std::max (outPk, std::max (std::abs (l), std::abs (r)));
+            outSq += 0.5 * ((double) l * l + (double) r * r);
             if (numOut >= 2)
             {
                 buffer.setSample (0, start + i, l);
@@ -318,6 +316,9 @@ void Rig74Processor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiB
 
     inputPeak.store (std::max (inputPeak.load(), inPk));
     outputPeak.store (std::max (outputPeak.load(), outPk));
+    inputRms.store (std::max (inputRms.load(), (float) std::sqrt (inSq / numSamples)));
+    if (! tunerOn) outputRms.store (std::max (outputRms.load(), (float) std::sqrt (outSq / numSamples)));
+    if (limiter.takeMinGain() < 0.97f) outputLimiting.store (true);
 }
 
 //==============================================================================

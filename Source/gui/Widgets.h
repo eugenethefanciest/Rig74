@@ -101,12 +101,15 @@ public:
     void setLevelDb (float dbfs) { targetPos = levelToPos (dbfs); }
     void setTunerMode (bool on) { if (tunerMode != on) { tunerMode = on; repaint(); } }
     void setTuner (const juce::String& noteName, float cents, bool valid);
+    /** Lights the PEAK lamp (held for about a second). */
+    void setPeak (bool hit) { if (hit) { if (peakHold == 0) repaint(); peakHold = 30; } }
     void tick();   // ~30 Hz
 
 private:
     static float levelToPos (float dbfs);
     juce::String label;
     float targetPos = 0.0f, pos = 0.0f;
+    int peakHold = 0;
     bool tunerMode = false, tunerValid = false;
     juce::String note;
     float centsValue = 0.0f;

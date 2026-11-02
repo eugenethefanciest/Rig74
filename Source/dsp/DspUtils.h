@@ -196,6 +196,36 @@ struct Lfo
 };
 
 //==============================================================================
+/** Biased tanh waveshaper  y = tanh(x + bias) - tanh(bias)  with first-order
+    antiderivative anti-aliasing (ADAA): the output is the average of the curve
+    between consecutive samples, which removes most of the aliasing that hard
+    saturation would otherwise fold back into the audible range. */
+struct AdaaTanh
+{
+    double bias = 0.0, tb = 0.0, x1 = 0.0, F1 = 0.0;
+
+    void setBias (double b) { bias = b; tb = std::tanh (b); F1 = F (x1); }
+    void reset() { x1 = 0.0; F1 = F (0.0); }
+
+    static inline double logCosh (double x) noexcept
+    {
+        const double ax = std::abs (x);
+        return ax + std::log1p (std::exp (-2.0 * ax)) - 0.69314718055994531;
+    }
+    inline double F (double x) const noexcept { return logCosh (x + bias) - tb * x; }
+
+    inline float process (float xf) noexcept
+    {
+        const double x = xf;
+        const double Fx = F (x);
+        const double d = x - x1;
+        const double y = std::abs (d) < 1.0e-6 ? std::tanh (0.5 * (x + x1) + bias) - tb : (Fx - F1) / d;
+        x1 = x; F1 = Fx;
+        return (float) y;
+    }
+};
+
+//==============================================================================
 /** Envelope follower with separate attack/release. */
 struct EnvFollower
 {

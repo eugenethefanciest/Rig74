@@ -29,7 +29,7 @@ const std::vector<Preset>& factoryPresets()
             { "rev_on", 1 }, { "rev_type", 2 }, { "rev_decay", 0.6f }, { "rev_mix", 0.2f } } },
 
         { "Fuzz Machine",
-          { { "drv_on", 1 }, { "drv_type", 2 }, { "drv_gain", 0.8f }, { "drv_tone", 0.55f }, { "drv_level", 0.6f },
+          { { "drv_on", 1 }, { "drv_type", 2 }, { "drv_gain", 0.8f }, { "drv_tone", 0.55f }, { "drv_level", 0.42f },
             { "amp_model", 0 }, { "amp_gain", 5.0f }, { "amp_bass", 6.0f }, { "amp_treble", 5.5f }, { "amp_master", 6.0f },
             { "cab_type", 3 }, { "gate_thresh", -55.0f },
             { "rev_on", 1 }, { "rev_type", 0 }, { "rev_decay", 0.3f }, { "rev_mix", 0.2f } } },

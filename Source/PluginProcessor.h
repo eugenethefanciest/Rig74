@@ -69,7 +69,8 @@ public:
     juce::File getUserIRFile() const { return cabinet.getUserIRFile(); }
 
     /** Meters (read & cleared by the editor). */
-    std::atomic<float> inputPeak { 0.0f }, outputPeak { 0.0f }, gateLevel { 1.0f };
+    std::atomic<float> inputPeak { 0.0f }, outputPeak { 0.0f }, inputRms { 0.0f }, outputRms { 0.0f }, gateLevel { 1.0f };
+    std::atomic<bool> outputLimiting { false };
 
     /** Tuner: editor pulls recent input samples from here. */
     int readTunerSamples (float* dest, int maxSamples);
@@ -108,6 +109,7 @@ private:
     rig::Tremolo tremolo;
     rig::EchoDelay echo;
     rig::ReverbUnit reverb;
+    rig::OutputLimiter limiter;
 
     std::unique_ptr<juce::dsp::Oversampling<float>> oversampler;
 

@@ -247,6 +247,7 @@ void VuMeter::setTuner (const String& n, float cents, bool valid)
 
 void VuMeter::tick()
 {
+    if (peakHold > 0 && --peakHold == 0) repaint();
     const float coef = targetPos > pos ? 0.35f : 0.18f;
     const float next = pos + (targetPos - pos) * coef;
     if (std::abs (next - pos) > 0.0005f || tunerMode) { pos = next; repaint(); }
@@ -349,6 +350,23 @@ void VuMeter::paint (Graphics& g)
     g.drawLine (Line<float> (pivot.translated (3.0f, 2.0f), polarPoint (pivot, R + face.getHeight() * 0.12f, a).translated (3.0f, 2.0f)), 1.6f);
     g.setColour (tunerMode ? Colour (0xffc0261b) : Colour (0xff120c08));
     g.drawLine (Line<float> (pivot, polarPoint (pivot, R + face.getHeight() * 0.12f, a)), 1.5f);
+
+    // PEAK lamp (input clipping / output limiter working)
+    if (! tunerMode)
+    {
+        const auto lc = Point<float> (face.getRight() - 9.0f, face.getBottom() - 9.0f);
+        if (peakHold > 0)
+        {
+            ColourGradient glow (colours::ledRed.withAlpha (0.7f), lc.x, lc.y, colours::ledRed.withAlpha (0.0f), lc.x + 10.0f, lc.y, true);
+            g.setGradientFill (glow);
+            g.fillEllipse (Rectangle<float> (20.0f, 20.0f).withCentre (lc));
+        }
+        g.setColour (peakHold > 0 ? colours::ledRed : Colour (0xff6a2a20));
+        g.fillEllipse (Rectangle<float> (7.0f, 7.0f).withCentre (lc));
+        g.setColour (ink.withAlpha (0.7f));
+        g.setFont (Fonts::label (jmax (9.0f, face.getHeight() * 0.12f)));
+        g.drawText ("PEAK", Rectangle<float> (40.0f, 12.0f).withPosition (lc.x - 46.0f, lc.y - 6.0f), Justification::centredRight, false);
+    }
 
     // glass reflection
     ColourGradient glass (Colours::white.withAlpha (0.28f), face.getX(), face.getY(), Colours::white.withAlpha (0.0f), face.getX(), face.getCentreY(), false);

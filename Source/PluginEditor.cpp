@@ -231,9 +231,13 @@ void MainPanel::timerCallback()
 {
     const bool tunerOn = tunerBtn.getToggleState();
     vuIn.setTunerMode (tunerOn);
+    // needles show the average (RMS) level like a real VU; PEAK lamps flag real overloads
     if (tunerOn) updateTuner();
-    else vuIn.setLevelDb (rig::gainToDb (proc.inputPeak.exchange (0.0f)));
-    vuOut.setLevelDb (rig::gainToDb (proc.outputPeak.exchange (0.0f)));
+    else vuIn.setLevelDb (rig::gainToDb (proc.inputRms.exchange (0.0f)));
+    vuOut.setLevelDb (rig::gainToDb (proc.outputRms.exchange (0.0f)));
+    vuIn.setPeak (proc.inputPeak.exchange (0.0f) > 0.89f);
+    vuOut.setPeak (proc.outputLimiting.exchange (false));
+    proc.outputPeak.store (0.0f);
     vuIn.tick();
     vuOut.tick();
 
